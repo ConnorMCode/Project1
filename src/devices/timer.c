@@ -1,5 +1,6 @@
 #include "devices/timer.h"
 #include <debug.h>
+#include <list.h>
 #include <inttypes.h>
 #include <round.h>
 #include <stdio.h>
@@ -30,12 +31,19 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
+/* List to hold sleeping threads waiting on a certain number
+   of ticks */
+static struct list sleeping_list;
+
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void timer_init (void)
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
+
+  /* Initialize sleeping thread list */
+  list_init(&sleeping_list);
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -78,15 +86,20 @@ int64_t timer_ticks (void)
    should be a value once returned by timer_ticks(). */
 int64_t timer_elapsed (int64_t then) { return timer_ticks () - then; }
 
-/* Sleeps for approximately TICKS timer ticks.  Interrupts must
-   be turned on. */
+/* Blocks current thread and adds it to sleeping_list to be
+   woken up later by timer_interrupt when it reaches its
+   wakeup_tick */
 void timer_sleep (int64_t ticks)
 {
-  int64_t start = timer_ticks ();
+  enum intr_level old_level = intr_disable();
 
-  ASSERT (intr_get_level () == INTR_ON);
-  while (timer_elapsed (start) < ticks)
-    thread_yield ();
+  struct thread *curr = thread_current();
+  curr->wakeup_tick = timer_ticks() + ticks;
+
+  list_push_back(&sleeping_list, &curr->elem);
+  thread_block();
+
+  intr_set_level(old_level);
 }
 
 /* Sleeps for approximately MS milliseconds.  Interrupts must be
@@ -138,6 +151,18 @@ void timer_print_stats (void)
 static void timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
+
+  struct list_elem *e = list_begin(&sleeping_list);
+  while (e != list_end(&sleeping_list)) {
+    struct thread *t = list_entry(e, struct thread, elem);
+    if (t->wakeup_tick <= ticks) {
+      e = list_remove(e);
+      thread_unblock(t);
+    } else {
+      e = list_next(e);
+    }
+  }
+    
   thread_tick ();
 }
 
