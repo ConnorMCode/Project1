@@ -106,7 +106,11 @@ void thread_start (void)
   /* Create the idle thread. */
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
-  thread_create ("idle", PRI_MIN, idle, &idle_started);
+  
+  /* Give Idle max priority on init so that it runs
+     once as intended, idle will change it's own
+     priority back later */
+  thread_create ("idle", PRI_MAX, idle, &idle_started);
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -230,9 +234,22 @@ void thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+
+  /* Insert in priority order using priority_compare */
+  list_insert_ordered (&ready_list, &t->elem, priority_compare, NULL);
   t->status = THREAD_READY;
+  
   intr_set_level (old_level);
+
+  /* Yield to this thread if it is higher priority than
+     the running thread */
+  if (t->priority > thread_current()->priority) {
+    if (intr_context()) {
+      intr_yield_on_return ();
+    } else {
+      thread_yield();
+    }
+  }
 }
 
 /* Returns the name of the running thread. */
@@ -290,7 +307,8 @@ void thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread)
-    list_push_back (&ready_list, &cur->elem);
+    /* Insert in priority order using priority_compare */
+    list_insert_ordered (&ready_list, &cur->elem, priority_compare, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -315,6 +333,10 @@ void thread_foreach (thread_action_func *func, void *aux)
 void thread_set_priority (int new_priority)
 {
   thread_current ()->priority = new_priority;
+
+  /* Yield to check if there are any higher priority threads
+     to run */
+  thread_yield();
 }
 
 /* Returns the current thread's priority. */
@@ -359,6 +381,10 @@ static void idle (void *idle_started_ UNUSED)
 {
   struct semaphore *idle_started = idle_started_;
   idle_thread = thread_current ();
+
+  /* Set idle threads priorty back to min */
+  thread_current()->priority = PRI_MIN;
+  
   sema_up (idle_started);
 
   for (;;)
@@ -457,6 +483,15 @@ static struct thread *next_thread_to_run (void)
     return idle_thread;
   else
     return list_entry (list_pop_front (&ready_list), struct thread, elem);
+}
+
+/* Comparator for priority to add threads in priority order */
+bool priority_compare (const struct list_elem *a, const struct list_elem *b, void *aux){
+  struct thread *thread_a = list_entry(a, struct thread, elem);
+  struct thread *thread_b = list_entry(b, struct thread, elem);
+
+  bool result = thread_a->priority > thread_b->priority;
+  return result;
 }
 
 /* Completes a thread switch by activating the new thread's page
