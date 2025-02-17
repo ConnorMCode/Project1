@@ -66,7 +66,7 @@ void sema_down (struct semaphore *sema)
   old_level = intr_disable ();
   while (sema->value == 0)
     {
-      list_push_back (&sema->waiters, &thread_current ()->elem);
+      list_insert_ordered (&sema->waiters, &thread_current ()->elem, synch_priority_compare, NULL);
       thread_block ();
     }
   sema->value--;
@@ -282,7 +282,7 @@ void cond_wait (struct condition *cond, struct lock *lock)
   ASSERT (lock_held_by_current_thread (lock));
 
   sema_init (&waiter.semaphore, 0);
-  list_push_back (&cond->waiters, &waiter.elem);
+  list_insert_ordered (&cond->waiters, &waiter.elem, condition_priority_compare, NULL);
   lock_release (lock);
   sema_down (&waiter.semaphore);
   lock_acquire (lock);
@@ -321,4 +321,26 @@ void cond_broadcast (struct condition *cond, struct lock *lock)
 
   while (!list_empty (&cond->waiters))
     cond_signal (cond, lock);
+}
+
+/* priority compare specifically for synch, would probably be able 
+   to use the comparator from thread.c here but not sure how */
+bool synch_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux){
+  struct thread *thread_a = list_entry(a, struct thread, elem);
+  struct thread *thread_b = list_entry(b, struct thread, elem);
+
+  bool result = thread_a->priority > thread_b->priority;
+  return result;
+}
+
+/* priority comparator specifically for semaphore_elem wrappers */
+bool condition_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux){
+  struct semaphore_elem *s_elem_a = list_entry(a, struct semaphore_elem, elem);
+  struct semaphore_elem *s_elem_b = list_entry(b, struct semaphore_elem, elem);
+
+  struct thread *thread_a = list_entry(list_front(&s_elem_a->semaphore.waiters), struct thread, elem);
+  struct thread *thread_b = list_entry(list_front(&s_elem_b->semaphore.waiters), struct thread, elem);
+
+  bool result = thread_a->priority > thread_b->priority;
+  return result;
 }
