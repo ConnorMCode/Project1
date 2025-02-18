@@ -454,6 +454,9 @@ static void init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->waiting_for = NULL;
+  t->old_priority = -1;
+  list_init(&t->donators);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

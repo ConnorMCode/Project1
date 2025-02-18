@@ -97,6 +97,18 @@ struct thread
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
+  /* Seperate list_elem for donators */
+  struct list_elem donation_elem;
+  
+  /* Reference to blocking lock for priority donation */
+  struct lock *waiting_for;
+
+  /* List of donators in case of multiple donations */
+  struct list donators;
+  
+  /* Priority storage in case of donation */
+  int old_priority;
+
 #ifdef USERPROG
   /* Owned by userprog/process.c. */
   uint32_t *pagedir; /* Page directory. */

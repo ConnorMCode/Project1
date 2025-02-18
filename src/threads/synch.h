@@ -44,6 +44,8 @@ void cond_broadcast (struct condition *, struct lock *);
 bool synch_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux);
 bool condition_priority_compare(const struct list_elem *a, const struct list_elem *b, void *aux);
 
+void donate_priority(void);
+
 /* Optimization barrier.
 
    The compiler will not reorder operations across an
