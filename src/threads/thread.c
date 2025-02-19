@@ -336,7 +336,12 @@ void thread_set_priority (int new_priority)
   if(thread_current()->old_priority == -1){
     thread_current ()->priority = new_priority;
   }else{
-    thread_current()->old_priority = new_priority;
+    if (new_priority > thread_current()->priority){
+      thread_current()->old_priority = thread_current()->priority;
+      thread_current()->priority = new_priority;
+    } else {
+      thread_current()->old_priority = new_priority;
+    }
   }
 
   /* Yield to check if there are any higher priority threads
